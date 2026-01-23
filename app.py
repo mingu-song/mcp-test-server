@@ -301,6 +301,7 @@ async def root():
 
 @app.get("/sse")
 async def mcp_sse_endpoint(
+    request: Request,
     authorization: Optional[str] = Header(None),
     auth_type: Optional[str] = Header(None),
     api_key_header: Optional[str] = Header(None),
@@ -308,16 +309,29 @@ async def mcp_sse_endpoint(
 ):
     """
     SSE 엔드포인트 - MCP 클라이언트 연결
-    
+
     mcp 라이브러리의 sse_client 프로토콜:
     1. 연결 시 'endpoint' 이벤트로 POST URL 전송 (순수 경로만)
     2. 클라이언트가 해당 URL로 JSON-RPC 메시지 POST
     3. 서버는 'message' 이벤트로 JSON-RPC 응답 전송
     """
-    
-    # 인증 로깅
-    print(f"[SSE] Connection request")
-    print(f"  - Authorization: {authorization}")
+
+    # 인증 로깅 - 상세
+    print("\n" + "=" * 60)
+    print("[SSE] 🔐 Connection request - HEADERS:")
+    print("=" * 60)
+    for key, value in request.headers.items():
+        # Authorization 헤더는 토큰 마스킹
+        if key.lower() == "authorization" and value:
+            prefix = value[:20] if len(value) > 20 else value
+            print(f"  {key}: {prefix}...({len(value)} chars)")
+        else:
+            print(f"  {key}: {value}")
+    print("=" * 60)
+
+    # 파싱된 값 출력
+    print(f"[SSE] Parsed headers:")
+    print(f"  - Authorization: {'Bearer token (' + str(len(authorization)) + ' chars)' if authorization else 'None'}")
     print(f"  - auth_type: {auth_type}")
     
     async def event_generator():
@@ -445,10 +459,22 @@ async def mcp_sse_endpoint(
 async def receive_message(session_id: str, request: Request):
     """
     클라이언트로부터 MCP JSON-RPC 메시지 수신
-    
+
     mcp 라이브러리는 이 엔드포인트로 JSON-RPC 요청을 POST하고,
     SSE 스트림을 통해 응답을 받음
     """
+    # 헤더 로깅
+    auth_header = request.headers.get("authorization")
+    print("\n" + "-" * 60)
+    print(f"[MESSAGE] 🔐 POST /message/{session_id} - HEADERS:")
+    for key, value in request.headers.items():
+        if key.lower() == "authorization" and value:
+            prefix = value[:20] if len(value) > 20 else value
+            print(f"  {key}: {prefix}...({len(value)} chars)")
+        else:
+            print(f"  {key}: {value}")
+    print("-" * 60)
+
     # Request body 파싱
     try:
         body = await request.body()
@@ -456,7 +482,7 @@ async def receive_message(session_id: str, request: Request):
     except json.JSONDecodeError as e:
         print(f"[MESSAGE] JSON parse error: {e}")
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
-    
+
     print(f"[MESSAGE] Received for session {session_id}: {json.dumps(message)[:200]}...")
     # _meta 확인을 위한 상세 로그
     if "params" in message and "_meta" in message.get("params", {}):
