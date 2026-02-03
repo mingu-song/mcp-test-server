@@ -1,11 +1,14 @@
 """
 간단한 MCP (Model Context Protocol) 테스트 서버
-SSE (Server-Sent Events) 방식으로 MCP 프로토콜 구현
 
-mcp Python 라이브러리의 sse_client가 기대하는 프로토콜 형식:
-1. SSE 연결 시 'endpoint' 이벤트로 POST URL 경로 전송
-2. 클라이언트는 해당 URL로 JSON-RPC 메시지 POST
-3. 서버는 SSE 'message' 이벤트로 응답 전송
+두 가지 전송 방식 지원:
+1. SSE (Server-Sent Events) - /sse 엔드포인트 (레거시)
+2. Streamable HTTP - /mcp 엔드포인트 (권장, MCP 2025-11 스펙)
+
+Streamable HTTP 프로토콜:
+- POST /mcp로 JSON-RPC 메시지 전송
+- 응답은 SSE 스트림으로 반환 (progress notification 포함)
+- 세션 관리가 필요 없는 stateless 방식
 """
 import asyncio
 import json
@@ -292,11 +295,112 @@ async def root():
         "name": "Test MCP Server",
         "version": "1.0.0",
         "protocol": "MCP 2024-11-05",
-        "transport": "SSE",
+        "transport": ["Streamable HTTP", "SSE"],
         "endpoints": {
-            "sse": "/sse"
+            "mcp": "/mcp (권장)",
+            "sse": "/sse (레거시)"
         }
     }
+
+
+@app.post("/mcp")
+async def mcp_streamable_http_endpoint(request: Request):
+    """
+    Streamable HTTP 엔드포인트 - MCP 2025-11 스펙 권장 방식
+
+    - POST 요청으로 JSON-RPC 메시지 수신
+    - SSE 스트림으로 응답 (progress notification + 최종 결과)
+    - Stateless: 각 요청이 독립적으로 처리됨
+    """
+    # 인증 헤더 로깅
+    print("\n" + "=" * 60)
+    print("[MCP] 🔐 POST /mcp - Streamable HTTP Request")
+    print("=" * 60)
+    for key, value in request.headers.items():
+        if key.lower() == "authorization" and value:
+            prefix = value[:20] if len(value) > 20 else value
+            print(f"  {key}: {prefix}...({len(value)} chars)")
+        else:
+            print(f"  {key}: {value}")
+    print("=" * 60)
+
+    # Request body 파싱
+    try:
+        body = await request.body()
+        message = json.loads(body)
+    except json.JSONDecodeError as e:
+        print(f"[MCP] JSON parse error: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+
+    print(f"[MCP] Received: {json.dumps(message, ensure_ascii=False)[:200]}...")
+
+    # _meta 확인
+    if "params" in message and "_meta" in message.get("params", {}):
+        print(f"[MCP] _meta found: {message['params']['_meta']}")
+
+    async def stream_response():
+        """SSE 스트림으로 응답 생성"""
+        sse_queue = asyncio.Queue()
+
+        # Progress callback - SSE 큐에 notification 추가
+        async def progress_callback(progress: float, total: float, message: str, progress_token=None):
+            print(f"[MCP PROGRESS] token={progress_token}, {progress}/{total}: {message}")
+            notification = {
+                "jsonrpc": "2.0",
+                "method": "notifications/progress",
+                "params": {
+                    "progress": progress,
+                    "total": total,
+                    "message": message
+                }
+            }
+            if progress_token is not None:
+                notification["params"]["progressToken"] = progress_token
+            await sse_queue.put(notification)
+
+        # 요청 처리 태스크
+        async def process_request():
+            return await mcp_server.handle_request(message, progress_callback)
+
+        task = asyncio.create_task(process_request())
+
+        # Progress notification과 최종 응답 스트리밍
+        while True:
+            # SSE 큐에서 progress notification 확인
+            try:
+                notification = await asyncio.wait_for(sse_queue.get(), timeout=0.1)
+                notification_json = json.dumps(notification, ensure_ascii=False)
+                print(f"[MCP] Streaming progress: {notification_json}")
+                yield f"event: message\ndata: {notification_json}\n\n"
+            except asyncio.TimeoutError:
+                pass
+
+            # 요청 처리 완료 확인
+            if task.done():
+                # 남은 progress notification 전송
+                while not sse_queue.empty():
+                    notification = await sse_queue.get()
+                    notification_json = json.dumps(notification, ensure_ascii=False)
+                    print(f"[MCP] Streaming progress: {notification_json}")
+                    yield f"event: message\ndata: {notification_json}\n\n"
+
+                # 최종 응답 전송
+                response = await task
+                if response is not None:
+                    response_json = json.dumps(response, ensure_ascii=False)
+                    print(f"[MCP] Streaming response: {response_json[:200]}...")
+                    yield f"event: message\ndata: {response_json}\n\n"
+                break
+
+    return StreamingResponse(
+        stream_response(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 @app.get("/sse")
@@ -516,8 +620,9 @@ if __name__ == "__main__":
     print("=" * 60)
     print("🚀 Test MCP Server Starting...")
     print("=" * 60)
-    print("📍 SSE Endpoint: http://localhost:8000/sse")
-    print("📍 Health Check: http://localhost:8000/health")
+    print("📍 Streamable HTTP (권장): http://localhost:8000/mcp")
+    print("📍 SSE (레거시):          http://localhost:8000/sse")
+    print("📍 Health Check:          http://localhost:8000/health")
     print("=" * 60)
     print("\n사용 가능한 도구:")
     for tool in mcp_server.tools:
@@ -528,9 +633,15 @@ if __name__ == "__main__":
     print("  파라미터: query (검색어), steps (단계 수, 기본 5)")
     print("  동작: 각 단계마다 1초 대기 + Progress Notification 전송")
     print("\n" + "=" * 60)
-    print("\nMISO에서 테스트:")
+    print("\n📋 MISO에서 테스트:")
+    print("")
+    print("  [Streamable HTTP - 권장]")
+    print('  서버 설정: {"test_mcp": {"url": "http://localhost:8000/mcp"}}')
+    print("")
+    print("  [SSE - 레거시]")
     print('  서버 설정: {"test_mcp": {"url": "http://localhost:8000/sse"}}')
-    print("  인증: None")
+    print("")
+    print("  인증: 없음")
     print("\n" + "=" * 60)
 
     uvicorn.run(
