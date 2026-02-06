@@ -185,16 +185,61 @@ class MCPServer:
                 print(f"[TOOL] search_with_progress: query='{query}', steps={steps}, progress_token={progress_token}")
 
                 progress_messages = [
-                    f"'{query}' 검색 시작...",
-                    f"키워드 분석 중...",
-                    f"데이터베이스 조회 중...",
-                    f"결과 필터링 중...",
-                    f"결과 정렬 중...",
-                    f"최종 결과 준비 중...",
+                    f"🔍 **검색 시작** - `{query}` 키워드 수신",
+                    f"📝 **키워드 분석 중** - 형태소 분석 및 토큰화 진행",
+                    f"🗄️ **데이터베이스 조회 중** - 인덱스 탐색 수행",
+                    f"⚙️ **결과 필터링 중** - 관련도 기반 필터 적용",
+                    f"📊 **결과 정렬 중** - 스코어링 및 랭킹 처리",
+                    f"✅ **최종 결과 준비 중** - 응답 포맷팅 완료 단계",
                 ]
 
                 total_steps = min(steps, len(progress_messages))
-                results = []
+
+                # 더미 검색 결과 데이터
+                dummy_results = [
+                    {
+                        "title": f"{query} 개요 및 핵심 개념 정리",
+                        "url": f"https://example.com/docs/{query.replace(' ', '-')}-overview",
+                        "snippet": f"{query}의 기본 개념부터 심화 내용까지 체계적으로 정리한 문서입니다. 입문자부터 숙련자까지 참고할 수 있습니다.",
+                        "relevance": 98,
+                        "category": "문서",
+                    },
+                    {
+                        "title": f"{query} 실전 활용 가이드 (2024)",
+                        "url": f"https://example.com/guide/{query.replace(' ', '-')}-practical",
+                        "snippet": f"실무에서 {query}를 효과적으로 활용하는 방법을 단계별로 설명합니다. 다양한 사례와 코드 예제를 포함합니다.",
+                        "relevance": 95,
+                        "category": "가이드",
+                    },
+                    {
+                        "title": f"{query} 관련 자주 묻는 질문 (FAQ)",
+                        "url": f"https://example.com/faq/{query.replace(' ', '-')}",
+                        "snippet": f"{query}에 대해 가장 많이 질문되는 항목들을 모아 명확하게 답변한 FAQ 모음입니다.",
+                        "relevance": 89,
+                        "category": "FAQ",
+                    },
+                    {
+                        "title": f"{query} 성능 벤치마크 및 비교 분석",
+                        "url": f"https://example.com/benchmark/{query.replace(' ', '-')}",
+                        "snippet": f"다양한 환경에서 {query}의 성능을 측정하고 대안 솔루션과 비교 분석한 리포트입니다.",
+                        "relevance": 82,
+                        "category": "분석",
+                    },
+                    {
+                        "title": f"{query} 최신 업데이트 및 변경사항",
+                        "url": f"https://example.com/changelog/{query.replace(' ', '-')}",
+                        "snippet": f"{query}의 최신 버전 릴리즈 노트와 주요 변경사항, 마이그레이션 가이드를 제공합니다.",
+                        "relevance": 76,
+                        "category": "릴리즈",
+                    },
+                    {
+                        "title": f"{query} 커뮤니티 토론 및 베스트 프랙티스",
+                        "url": f"https://example.com/community/{query.replace(' ', '-')}",
+                        "snippet": f"개발자 커뮤니티에서 공유된 {query} 관련 팁, 트릭, 베스트 프랙티스를 정리했습니다.",
+                        "relevance": 71,
+                        "category": "커뮤니티",
+                    },
+                ]
 
                 for i in range(total_steps):
                     # Progress notification 전송 (progressToken 포함)
@@ -211,10 +256,34 @@ class MCPServer:
                     # 각 단계마다 1초 대기 (실제 작업 시뮬레이션)
                     await asyncio.sleep(1)
 
-                    # 더미 결과 추가
-                    results.append(f"결과 {i+1}: {query} 관련 항목")
+                # 결과 조립
+                result_count = min(total_steps, len(dummy_results))
+                result_entries = []
+                for i in range(result_count):
+                    r = dummy_results[i]
+                    result_entries.append(
+                        f"#### {i+1}. {r['title']}\n"
+                        f"- 🏷️ **카테고리**: `{r['category']}` | 📈 **관련도**: {r['relevance']}%\n"
+                        f"- 🔗 **URL**: [{r['url']}]({r['url']})\n"
+                        f"- 💬 {r['snippet']}"
+                    )
 
-                message = f"검색 완료! '{query}'에 대해 {len(results)}개의 결과를 찾았습니다.\n" + "\n".join(results)
+                elapsed = total_steps  # 1초 × 단계 수
+                message = (
+                    f"## 🎉 검색 완료\n\n"
+                    f"> **`{query}`** 키워드에 대해 **{result_count}건**의 결과를 찾았습니다.\n\n"
+                    f"| 항목 | 값 |\n"
+                    f"|------|----|\n"
+                    f"| 🔎 검색어 | `{query}` |\n"
+                    f"| 📄 결과 수 | **{result_count}건** |\n"
+                    f"| ⏱️ 소요 시간 | **{elapsed}초** |\n"
+                    f"| 📊 최고 관련도 | **{dummy_results[0]['relevance']}%** |\n\n"
+                    f"---\n\n"
+                    f"### 📋 검색 결과\n\n"
+                    + "\n\n".join(result_entries) +
+                    f"\n\n---\n\n"
+                    f"*💡 더 정확한 결과를 위해 검색어를 구체적으로 입력해 보세요.*"
+                )
 
             else:
                 return {
