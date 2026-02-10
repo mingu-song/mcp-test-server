@@ -685,12 +685,73 @@ async def health_check():
     }
 
 
+# ============================================================
+# Custom API Guardrail 테스트 엔드포인트
+# ============================================================
+
+@app.post("/guardrail")
+async def guardrail_endpoint(request: Request):
+    """
+    Custom API 가드레일 테스트 엔드포인트
+
+    MISO CustomApiGuardrailEngine이 호출하는 형식:
+    - Input:  {"text": "...", "source": "INPUT",  "metadata": {...}}
+    - Output: {"text": "...", "source": "OUTPUT", "metadata": {...}}
+    - File:   {"text": "", "file": {"filename": "...", "mimetype": "...", "content_base64": "..."}, "source": "FILE", "metadata": {...}}
+
+    응답:
+    - 안전: {"action": "NONE", "is_safe": true}
+    - 차단: {"action": "GUARDRAIL_INTERVENED", "is_safe": false, "blocked_reasons": {...}}
+    """
+    # 헤더 로깅
+    print("\n" + "=" * 60)
+    print("[GUARDRAIL] POST /guardrail")
+    print("=" * 60)
+    for key, value in request.headers.items():
+        if key.lower() in ("authorization", "x-api-key") and value:
+            prefix = value[:20] if len(value) > 20 else value
+            print(f"  {key}: {prefix}...({len(value)} chars)")
+        else:
+            print(f"  {key}: {value}")
+    print("-" * 60)
+
+    # Body 파싱
+    try:
+        body = await request.body()
+        payload = json.loads(body)
+    except json.JSONDecodeError as e:
+        print(f"[GUARDRAIL] JSON parse error: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+
+    source = payload.get("source", "UNKNOWN")
+    text = payload.get("text", "")
+    metadata = payload.get("metadata", {})
+    file_info = payload.get("file")
+
+    print(f"[GUARDRAIL] source={source}")
+    print(f"[GUARDRAIL] text={text[:200]}{'...' if len(text) > 200 else ''}")
+    print(f"[GUARDRAIL] metadata={json.dumps(metadata, ensure_ascii=False)}")
+    if file_info:
+        print(f"[GUARDRAIL] file.filename={file_info.get('filename')}")
+        print(f"[GUARDRAIL] file.mimetype={file_info.get('mimetype')}")
+        content_b64 = file_info.get("content_base64", "")
+        print(f"[GUARDRAIL] file.content_base64=({len(content_b64)} chars)")
+    print("=" * 60)
+
+    # 항상 안전 응답 (로깅만 수행)
+    return {
+        "action": "NONE",
+        "is_safe": True,
+    }
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("🚀 Test MCP Server Starting...")
     print("=" * 60)
     print("📍 Streamable HTTP (권장): http://localhost:8000/mcp")
     print("📍 SSE (레거시):          http://localhost:8000/sse")
+    print("📍 Custom API Guardrail:  http://localhost:8000/guardrail")
     print("📍 Health Check:          http://localhost:8000/health")
     print("=" * 60)
     print("\n사용 가능한 도구:")
@@ -701,6 +762,15 @@ if __name__ == "__main__":
     print("  도구: search_with_progress")
     print("  파라미터: query (검색어), steps (단계 수, 기본 5)")
     print("  동작: 각 단계마다 1초 대기 + Progress Notification 전송")
+    print("\n" + "=" * 60)
+    print("\n🛡️ Custom API 가드레일 테스트:")
+    print("  엔드포인트: http://localhost:8000/guardrail")
+    print("  인증: 헤더 로깅만 (X-API-Key, Authorization)")
+    print("  동작: 모든 요청에 안전 응답 반환 + 로깅")
+    print("  MISO 설정:")
+    print("    - API Endpoint: http://localhost:8000/guardrail")
+    print("    - Auth Type: api_key (또는 bearer/none)")
+    print("    - API Key: test-key-12345 (아무 값)")
     print("\n" + "=" * 60)
     print("\n📋 MISO에서 테스트:")
     print("")
