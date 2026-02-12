@@ -689,6 +689,8 @@ async def health_check():
 # Custom API Guardrail 테스트 엔드포인트
 # ============================================================
 
+_guardrail_file_count = 0
+
 @app.post("/guardrail")
 async def guardrail_endpoint(request: Request):
     """
@@ -738,7 +740,45 @@ async def guardrail_endpoint(request: Request):
         print(f"[GUARDRAIL] file.content_base64=({len(content_b64)} chars)")
     print("=" * 60)
 
-    # 항상 안전 응답 (로깅만 수행)
+    # FILE 소스: 두 번에 한 번씩 차단
+    if source == "FILE":
+        global _guardrail_file_count
+        _guardrail_file_count += 1
+        print(f"[GUARDRAIL] file_call_count={_guardrail_file_count}")
+
+        if _guardrail_file_count % 2 == 0:
+            print(f"[GUARDRAIL] => FILE BLOCKED (count={_guardrail_file_count}, even)")
+            print("=" * 60)
+            return {
+                "action": "GUARDRAIL_INTERVENED",
+                "is_safe": False,
+                "blocked_reasons": {
+                    "reason": "파일 가드레일 차단 (simulated failure)",
+                },
+            }
+
+        print(f"[GUARDRAIL] => FILE PASSED (count={_guardrail_file_count}, odd)")
+        print("=" * 60)
+        return {
+            "action": "NONE",
+            "is_safe": True,
+        }
+
+    # "아이유" 포함 여부 검사 (INPUT/OUTPUT)
+    if "아이유" in text:
+        print("[GUARDRAIL] BLOCKED: '아이유' detected")
+        print("=" * 60)
+        return {
+            "action": "GUARDRAIL_INTERVENED",
+            "is_safe": False,
+            "blocked_reasons": {
+                "reason": "'아이유' 관련 내용은 허용되지 않습니다.",
+            },
+        }
+
+    # 안전 응답
+    print("[GUARDRAIL] => PASSED")
+    print("=" * 60)
     return {
         "action": "NONE",
         "is_safe": True,
