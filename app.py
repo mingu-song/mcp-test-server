@@ -1,12 +1,13 @@
 """
 간단한 MCP (Model Context Protocol) 테스트 서버
 
-두 가지 전송 방식 지원:
+세 가지 전송 방식 지원:
 1. SSE (Server-Sent Events) - /sse 엔드포인트 (레거시)
 2. Streamable HTTP - /mcp 엔드포인트 (권장, MCP 2025-11 스펙)
+3. Streamable HTTP - /mcp2 엔드포인트 (/mcp와 동일)
 
 Streamable HTTP 프로토콜:
-- POST /mcp로 JSON-RPC 메시지 전송
+- POST /mcp 또는 /mcp2로 JSON-RPC 메시지 전송
 - 응답은 SSE 스트림으로 반환 (progress notification 포함)
 - 세션 관리가 필요 없는 stateless 방식
 """
@@ -367,12 +368,14 @@ async def root():
         "transport": ["Streamable HTTP", "SSE"],
         "endpoints": {
             "mcp": "/mcp (권장)",
+            "mcp2": "/mcp2 (/mcp와 동일)",
             "sse": "/sse (레거시)"
         }
     }
 
 
 @app.post("/mcp")
+@app.post("/mcp2")
 async def mcp_streamable_http_endpoint(request: Request):
     """
     Streamable HTTP 엔드포인트 - MCP 2025-11 스펙 권장 방식
@@ -840,6 +843,7 @@ if __name__ == "__main__":
     print("🚀 Test MCP Server Starting...")
     print("=" * 60)
     print("📍 Streamable HTTP (권장): http://localhost:8000/mcp")
+    print("📍 Streamable HTTP 2:     http://localhost:8000/mcp2")
     print("📍 SSE (레거시):          http://localhost:8000/sse")
     print("📍 Custom API Guardrail:  http://localhost:8000/guardrail")
     print("📍 Health Check:          http://localhost:8000/health")
@@ -866,6 +870,9 @@ if __name__ == "__main__":
     print("")
     print("  [Streamable HTTP - 권장]")
     print('  서버 설정: {"test_mcp": {"url": "http://localhost:8000/mcp"}}')
+    print("")
+    print("  [Streamable HTTP 2 - /mcp와 동일]")
+    print('  서버 설정: {"test_mcp": {"url": "http://localhost:8000/mcp2"}}')
     print("")
     print("  [SSE - 레거시]")
     print('  서버 설정: {"test_mcp": {"url": "http://localhost:8000/sse"}}')
