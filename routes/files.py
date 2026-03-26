@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
@@ -48,5 +49,5 @@ async def files_endpoint(request: Request):
     return Response(
         content=content,
         media_type=content_type,
-        headers={"X-Filename": filename},
+        headers={"X-Filename": quote(filename)},
     )
